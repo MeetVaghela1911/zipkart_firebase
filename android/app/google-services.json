@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "722373402894",
+    "project_id": "zipkart-firebase",
+    "storage_bucket": "zipkart-firebase.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:722373402894:android:660c450c9d634b435ab75f",
+        "android_client_info": {
+          "package_name": "com.example.zipkart_firebase"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB7VluTKEpDmgpwqmseVlh4vOfKYXCIv1I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

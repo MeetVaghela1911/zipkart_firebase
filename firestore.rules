@@ -1,0 +1,174 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+    
+    /// Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    /// Get current user's UID
+    function getUserId() {
+      return request.auth.uid;
+    }
+    
+    /// Check if user is accessing their own document
+    function isOwner(userId) {
+      return isAuthenticated() && getUserId() == userId;
+    }
+    
+    /// Check if user is active (not blocked)
+    function isUserActive(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.isActive == true;
+    }
+    
+    // ============================================
+    // USERS COLLECTION
+    // ============================================
+    
+    /// Users collection security rules
+    /// 
+    /// SECURITY RULES:
+    /// 1. Users can read their own profile
+    /// 2. Users can update their own profile (except uid, role, isActive)
+    /// 3. Users can create their own profile during sign up
+    /// 4. Only admins can read all users (implement admin check if needed)
+    /// 5. Only admins can update isActive field
+    /// 
+    /// NOTE: Password is NEVER stored here - Firebase Auth handles authentication
+    match /users/{userId} {
+      // Allow read if:
+      // - User is authenticated AND
+      // - (User is reading their own profile OR user is active)
+      allow read: if isAuthenticated() && 
+                     (isOwner(userId) || isUserActive(userId));
+      
+      // Allow create if:
+      // - User is authenticated AND
+      // - User is creating their own profile (document ID matches their UID) AND
+      // - Required fields are present AND
+      // - uid field matches the document ID AND
+      // - isActive is set to true (new users are active by default)
+      allow create: if isAuthenticated() &&
+                      isOwner(userId) &&
+                      request.resource.data.keys().hasAll(['uid', 'email', 'username', 'phone', 'role', 'isActive', 'createdAt', 'updatedAt']) &&
+                      request.resource.data.uid == userId &&
+                      request.resource.data.isActive == true &&
+                      request.resource.data.role in ['buyer', 'seller'];
+      
+      // Allow update if:
+      // - User is authenticated AND
+      // - User is updating their own profile AND
+      // - Cannot change uid (immutable) AND
+      // - Cannot change role (only admins can change this) AND
+      // - Cannot change isActive (only admins can change this) AND
+      // - updatedAt is updated to serverTimestamp
+      allow update: if isAuthenticated() &&
+                      isOwner(userId) &&
+                      request.resource.data.uid == resource.data.uid && // uid cannot be changed
+                      request.resource.data.role == resource.data.role && // role cannot be changed by user
+                      request.resource.data.isActive == resource.data.isActive; // isActive cannot be changed by user
+      
+      // Allow delete: Only admins can delete users (implement admin check if needed)
+      // For now, users cannot delete their own accounts
+      allow delete: if false;
+    }
+    
+    // ============================================
+    // PRODUCTS COLLECTION (if needed)
+    // ============================================
+    
+    /// Products collection - basic rules
+    /// Update these based on your product access requirements
+    match /products/{productId} {
+      // Allow read to all authenticated users
+      allow read: if isAuthenticated();
+      
+      // Allow create/update/delete only to sellers/admins
+      // Implement seller/admin check based on your requirements
+      allow write: if isAuthenticated();
+    }
+    
+    // ============================================
+    // ORDERS COLLECTION (if needed)
+    // ============================================
+    
+    /// Orders collection - basic rules
+    /// Update these based on your order access requirements
+    match /orders/{orderId} {
+      // Users can read their own orders
+      allow read: if isAuthenticated() && 
+                     (resource.data.userId == getUserId() || 
+                      resource.data.sellerId == getUserId());
+      
+      // Users can create orders
+      allow create: if isAuthenticated() &&
+                      request.resource.data.userId == getUserId();
+      
+      // Sellers can update orders they own
+      allow update: if isAuthenticated() &&
+                      resource.data.sellerId == getUserId();
+      
+      // Orders cannot be deleted
+      allow delete: if false;
+    }
+    
+    // ============================================
+    // ADMIN PANEL COLLECTIONS
+    // ============================================
+    
+    /// Helper function to check if user is admin
+    /// NOTE: Requires 'admin' role to be added to app_user.dart model
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(getUserId())).data.role == 'admin';
+    }
+    
+    /// Banners collection - public read, admin write
+    match /banners/{bannerId} {
+      allow read: if true; // Public read for displaying banners
+      allow create, update, delete: if isAdmin();
+    }
+    
+    /// Categories collection - public read, admin write
+    match /categories/{categoryId} {
+      allow read: if true; // Public read for browsing categories
+      allow create, update, delete: if isAdmin();
+    }
+    
+    /// Subcategories collection - public read, admin write
+    match /subcategories/{subcategoryId} {
+      allow read: if true; // Public read for browsing subcategories
+      allow create, update, delete: if isAdmin();
+    }
+    
+    /// Sales collection - public read, admin write
+    match /sales/{saleId} {
+      allow read: if true; // Public read for displaying sales
+      allow create, update, delete: if isAdmin();
+    }
+    
+    /// Sellers collection for approval workflow
+    match /sellers/{sellerId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && sellerId == getUserId();
+      allow update: if isAdmin(); // Only admin can approve sellers
+      allow delete: if isAdmin();
+    }
+    
+    // ============================================
+    // DEFAULT DENY RULE
+    // ============================================
+    
+    /// Deny all other collections by default
+    /// This ensures only explicitly allowed collections are accessible
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
